@@ -1,5 +1,6 @@
-import { Project, ScheduleResult } from './types';
+import { CycleInfo, Project, RehearsalChange, ScheduleResult } from './types';
 import { Selection } from './GraphCanvas';
+import { Rehearsal } from './Rehearsal';
 
 interface SidePanelProps {
   project: Project;
@@ -9,6 +10,10 @@ interface SidePanelProps {
   onUpdateEdge: (id: string, patch: { minDelay?: number }) => void;
   onDeleteNode: (id: string) => void;
   onDeleteEdge: (id: string) => void;
+  /** 当前图成环信息（环回退排程时仍需让预演区提示无法试算） */
+  cyclePath?: CycleInfo;
+  /** 预演「应用」：复用现有编辑与保存链 */
+  onRehearsalApply: (change: RehearsalChange) => void;
 }
 
 export function SidePanel(props: SidePanelProps) {
@@ -58,6 +63,14 @@ export function SidePanel(props: SidePanelProps) {
         <button className="danger" onClick={() => props.onDeleteNode(node.id)}>
           删除口令
         </button>
+        <Rehearsal
+          key={node.id}
+          project={project}
+          schedule={schedule}
+          cycle={props.cyclePath}
+          target={{ kind: 'node', id: node.id, current: node.duration }}
+          onApply={props.onRehearsalApply}
+        />
       </div>
     );
   }
@@ -92,6 +105,14 @@ export function SidePanel(props: SidePanelProps) {
         {schedule?.backward?.criticalEdgeIds.includes(edge.id) && (
           <p className="hint critical-hint">该约束位于关键链上</p>
         )}
+        <Rehearsal
+          key={edge.id}
+          project={project}
+          schedule={schedule}
+          cycle={props.cyclePath}
+          target={{ kind: 'edge', id: edge.id, current: edge.minDelay }}
+          onApply={props.onRehearsalApply}
+        />
       </div>
     );
   }
@@ -106,6 +127,7 @@ export function SidePanel(props: SidePanelProps) {
         <li>拖动空白处平移，滚轮缩放</li>
         <li>每次修改都会实时重算最早执行时间</li>
         <li>工具栏勾选「开场截止」后按截止秒数倒排，浮动最小的链路即关键链</li>
+        <li>选中口令或约束后可在侧栏「增量预演」试算增时长的影响，不保存</li>
       </ul>
       {schedule && (
         <p className="hint">

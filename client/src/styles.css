@@ -254,6 +254,77 @@ button.danger { background: transparent; border-color: var(--red); color: var(--
 .side-panel .critical-hint { color: var(--gold); }
 .side-panel .overrun-hint { color: var(--red); }
 
+/* ---------- 增量预演 ---------- */
+.rehearsal {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.rehearsal h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.rehearsal .hint { margin: 8px 0 0; }
+.rehearsal-warn { color: var(--red); }
+.rehearsal-compare {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rehearsal-compare th,
+.rehearsal-compare td {
+  border: 1px solid var(--border);
+  padding: 5px 7px;
+  text-align: center;
+}
+.rehearsal-compare th {
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--panel-2);
+}
+.rehearsal-compare td:first-child {
+  color: var(--muted);
+  text-align: left;
+}
+.rehearsal-compare .rehearsal-worse { color: var(--red); font-weight: 600; }
+.rehearsal-delays {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rehearsal-delays li {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--amber);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.rehearsal-delay-head { display: block; font-weight: 600; }
+.rehearsal-delay-head em {
+  color: var(--red);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.rehearsal-path {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.6;
+  word-break: break-all;
+}
+.rehearsal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* ---------- 甘特图 ---------- */
 .timeline {
   height: 180px;

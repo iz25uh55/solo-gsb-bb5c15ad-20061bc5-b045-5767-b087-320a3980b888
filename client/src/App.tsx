@@ -4,7 +4,7 @@ import { GraphCanvas, Selection } from './GraphCanvas';
 import { computeSchedule } from './schedule';
 import { SidePanel } from './SidePanel';
 import { Timeline } from './Timeline';
-import { CommandNode, Project, ScheduleResult } from './types';
+import { CommandNode, Project, RehearsalChange, ScheduleResult } from './types';
 import { useSimulation } from './useSimulation';
 
 const EMPTY: Project = { nodes: [], edges: [] };
@@ -145,6 +145,18 @@ export default function App() {
     [update],
   );
 
+  // 预演「应用」：沿现有编辑与防抖保存链写入；取消只丢弃预演侧栏的内存状态。
+  const applyRehearsal = useCallback(
+    (change: RehearsalChange) => {
+      if (change.kind === 'node') {
+        updateNode(change.id, { duration: change.value });
+      } else {
+        updateEdge(change.id, { minDelay: change.value });
+      }
+    },
+    [updateNode, updateEdge],
+  );
+
   if (loadError) {
     return <div className="boot-message">加载失败：{loadError}</div>;
   }
@@ -233,10 +245,12 @@ export default function App() {
           project={project}
           schedule={effectiveSchedule}
           selection={selection}
+          cyclePath={cycle}
           onUpdateNode={updateNode}
           onUpdateEdge={updateEdge}
           onDeleteNode={deleteNode}
           onDeleteEdge={deleteEdge}
+          onRehearsalApply={applyRehearsal}
         />
       </div>
 

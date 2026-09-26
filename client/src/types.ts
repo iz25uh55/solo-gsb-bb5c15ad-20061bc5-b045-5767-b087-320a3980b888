@@ -64,6 +64,36 @@ export interface ScheduleResult {
   backward?: BackwardInfo;
 }
 
+/** 增量预演的改动点：口令持续时长或约束等待秒数（仅允许不小于当前值） */
+export interface RehearsalChange {
+  kind: 'node' | 'edge';
+  id: string;
+  /** 试算采用的新值（秒） */
+  value: number;
+}
+
+/** 试算中开始时刻实际推迟的一条口令 */
+export interface RehearsalDelay {
+  id: string;
+  /** 开始时刻实际推迟的秒数 */
+  delay: number;
+  /** 从改动点沿紧约束传播到该口令的前驱路径（节点 id，含改动点与自身） */
+  pathNodeIds: string[];
+  /** 路径上的约束边 id（等长路径按边 id 稳定选出） */
+  pathEdgeIds: string[];
+}
+
+/** 增量预演结果（纯内存试算，不触发保存） */
+export interface RehearsalResult {
+  ok: boolean;
+  /** 试算图成环时给出成环路径（此时无法试算） */
+  cycle?: CycleInfo;
+  /** 试算得到的新排程（无环时可用） */
+  schedule?: ScheduleResult;
+  /** 开始时刻实际推迟的口令（按推迟秒数降序，等长按节点 id 稳定排序） */
+  delays: RehearsalDelay[];
+}
+
 export type SimState = 'idle' | 'running' | 'paused' | 'finished';
 
 export type NodeStatus = 'pending' | 'running' | 'done';

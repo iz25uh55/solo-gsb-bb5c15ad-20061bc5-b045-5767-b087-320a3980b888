@@ -1,4 +1,13 @@
-import { BackwardInfo, CycleInfo, Project, ScheduleResult } from './types';
+import {
+  BackwardInfo,
+  CommandEdge,
+  CycleInfo,
+  Project,
+  RehearsalChange,
+  RehearsalDelay,
+  RehearsalResult,
+  ScheduleResult,
+} from './types';
 
 const EPS = 1e-9;
 
@@ -182,4 +191,106 @@ function findCycle(project: Project, indegree: Map<string, number>): CycleInfo |
     nodeIds: pathNodes.slice(cycleStart),
     edgeIds: pathEdges.slice(cycleStart),
   };
+}
+
+/**
+ * 增量预演：在内存克隆的口令图上应用一处改动（口令持续时长或约束等待秒数，
+ * 仅允许不小于当前值），重算排程并与现行排程对比。
+ * 不修改入参、不触发保存；调用方据此并排展示现行与试算结果。
+ *
+ * 返回每个开始时刻实际推迟的口令及其推迟秒数，并给出从改动点沿
+ * 紧约束（试算排程中被拉等的前置约束）传播到该口令的前驱路径；
+ * 同一节点存在多条等长紧约束入边时按边 id 字典序稳定选一路。
+ */
+export function simulateRehearsal(
+  project: Project,
+  change: RehearsalChange,
+  base: ScheduleResult,
+): RehearsalResult {
+  // 内存克隆，原图与现行排程保持不变
+  const cloned: Project = {
+    ...project,
+    nodes: project.nodes.map((n) => ({ ...n })),
+    edges: project.edges.map((e) => ({ ...e })),
+    deadline: project.deadline ? { ...project.deadline } : undefined,
+  };
+  if (change.kind === 'node') {
+    const node = cloned.nodes.find((n) => n.id === change.id);
+    if (!node || !(change.value >= node.duration)) return { ok: false, delays: [] };
+    node.duration = change.value;
+  } else {
+    const edge = cloned.edges.find((e) => e.id === change.id);
+    if (!edge || !(change.value >= edge.minDelay)) return { ok: false, delays: [] };
+    edge.minDelay = change.value;
+  }
+
+  const trial = computeSchedule(cloned);
+  if (!trial.ok) return { ok: false, cycle: trial.cycle, delays: [] };
+
+  const delays: RehearsalDelay[] = [];
+  for (const n of cloned.nodes) {
+    const before = base.starts[n.id];
+    const after = trial.starts[n.id];
+    if (before === undefined || after === undefined) continue;
+    if (after > before + EPS) {
+      delays.push({
+        id: n.id,
+        delay: after - before,
+        ...traceTightPath(cloned, change, trial.starts, n.id),
+      });
+    }
+  }
+  // 推迟秒数降序；等长按节点 id 稳定排序，保证展示确定
+  delays.sort((a, b) => b.delay - a.delay || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return { ok: true, schedule: trial, delays };
+}
+
+/**
+ * 在试算排程中从被推迟口令沿紧约束入边回溯到改动点，得到前驱传播路径。
+ * 推迟只可能源于本次唯一改动：若紧约束入边的前驱本身未推迟，
+ * 则该边（或其前驱）必为改动点，回溯在此终止。
+ * 同一节点有多条等长紧约束入边时按边 id 字典序取最小，保证路径稳定。
+ */
+function traceTightPath(
+  trial: Project,
+  change: RehearsalChange,
+  trialStarts: Record<string, number>,
+  targetId: string,
+): { pathNodeIds: string[]; pathEdgeIds: string[] } {
+  const durationOf = new Map(trial.nodes.map((n) => [n.id, n.duration]));
+  const incoming = new Map<string, CommandEdge[]>();
+  for (const e of trial.edges) {
+    const list = incoming.get(e.to);
+    if (list) list.push(e);
+    else incoming.set(e.to, [e]);
+  }
+
+  const nodeIds = [targetId];
+  const edgeIds: string[] = [];
+  const visited = new Set<string>([targetId]);
+  let cur = targetId;
+
+  for (;;) {
+    if (change.kind === 'node' && cur === change.id) break; // 回溯到达改动口令
+    const tight = (incoming.get(cur) ?? []).filter(
+      (e) =>
+        Math.abs(
+          (trialStarts[e.from] ?? 0) + (durationOf.get(e.from) ?? 0) + e.minDelay -
+            (trialStarts[cur] ?? 0),
+        ) < EPS,
+    );
+    if (tight.length === 0) break; // 无环图中被推迟口令必有紧约束入边，此处仅作防御
+    tight.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const chosen = tight[0];
+    edgeIds.push(chosen.id);
+    nodeIds.push(chosen.from);
+    cur = chosen.from;
+    if (change.kind === 'edge' && chosen.id === change.id) break; // 经改动约束传播，源头即其前驱
+    if (visited.has(cur)) break; // 理论不可达（无环），防御死循环
+    visited.add(cur);
+  }
+
+  nodeIds.reverse();
+  edgeIds.reverse();
+  return { pathNodeIds: nodeIds, pathEdgeIds: edgeIds };
 }
