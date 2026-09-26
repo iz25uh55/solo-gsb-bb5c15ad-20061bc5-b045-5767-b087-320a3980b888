@@ -254,6 +254,89 @@ button.danger { background: transparent; border-color: var(--red); color: var(--
 .side-panel .critical-hint { color: var(--gold); }
 .side-panel .overrun-hint { color: var(--red); }
 
+/* ---------- 增量预演 ---------- */
+.whatif {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.whatif h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.whatif-current { color: var(--muted); font-weight: 400; }
+.whatif-outcome { margin: 10px 0; }
+.whatif-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.whatif-table th,
+.whatif-table td {
+  border: 1px solid var(--border);
+  padding: 5px 7px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.whatif-table th { color: var(--muted); font-weight: 500; background: var(--panel-2); }
+.whatif-table .num-overrun { color: var(--red); font-weight: 600; }
+.whatif-table .num-muted { color: var(--muted); }
+.delta-up { color: var(--amber); font-size: 11px; }
+.delta-zero { color: var(--muted); font-size: 11px; }
+
+.whatif-delayed {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.whatif-delay-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 2px;
+  font-size: 12px;
+}
+.whatif-delay-name { color: var(--text); font-weight: 600; }
+.whatif-path {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--muted);
+  word-break: break-word;
+}
+.whatif-hop-edge { color: var(--muted); }
+.whatif-hop-edge.hop-edge-change { color: #9dbdff; font-weight: 600; }
+.whatif-hop-node {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.whatif-hop-node.hop-change { border-color: var(--accent); color: #9dbdff; }
+.whatif-hop-node.hop-end { border-color: var(--amber); color: var(--amber); }
+.whatif-hop-node.hop-cycle { border-color: var(--red); color: var(--red); }
+
+.whatif-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.whatif-actions button { padding: 5px 18px; }
+.whatif-note { margin: 8px 0 0; }
+.whatif-cycle .cycle-path { margin-top: 6px; }
+.cycle-path-line {
+  font-size: 11px;
+  line-height: 2;
+  word-break: break-word;
+  margin: 4px 0 0;
+}
+
 /* ---------- 甘特图 ---------- */
 .timeline {
   height: 180px;

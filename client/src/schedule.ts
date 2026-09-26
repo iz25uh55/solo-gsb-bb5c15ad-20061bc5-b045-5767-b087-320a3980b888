@@ -1,4 +1,4 @@
-import { BackwardInfo, CycleInfo, Project, ScheduleResult } from './types';
+import { BackwardInfo, CommandEdge, CycleInfo, Project, ScheduleResult } from './types';
 
 const EPS = 1e-9;
 
@@ -182,4 +182,165 @@ function findCycle(project: Project, indegree: Map<string, number>): CycleInfo |
     nodeIds: pathNodes.slice(cycleStart),
     edgeIds: pathEdges.slice(cycleStart),
   };
+}
+
+/** 增量预演：内存中对单项改动（口令持续时长 / 约束等待秒数）试算 */
+export interface WhatIfChange {
+  kind: 'node' | 'edge';
+  id: string;
+  /** 试算输入值（不小于当前值） */
+  value: number;
+}
+
+/** 一条开始时刻被实际推迟的口令及其传播前驱路径 */
+export interface WhatIfDelayed {
+  nodeId: string;
+  /** 开始时刻实际推迟的秒数（>0） */
+  delay: number;
+  /** 从改动点沿被拉紧的约束传播而来的前驱节点 id（改动点在路径末端） */
+  pathNodeIds: string[];
+  /** 与前驱路径对应的约束边 id（在路径末端的前驱节点与其后继之间） */
+  pathEdgeIds: string[];
+}
+
+export interface WhatIfResult {
+  ok: boolean;
+  /** 现行排程（当前图） */
+  current?: ScheduleResult;
+  /** 试算排程（克隆图） */
+  trial?: ScheduleResult;
+  /** 开始时刻实际推迟的口令 */
+  delayed?: WhatIfDelayed[];
+  /** 试算后图出现环时的成环路径（正常不会发生：仅放大时长/等待不会引入新环） */
+  cycle?: CycleInfo;
+}
+
+/**
+ * 增量预演试算（纯内存，不写入任何状态）。
+ *
+ * 在项目克隆上把单条口令持续时长或单条约束等待秒数改为不小于当前值的新值后重算，
+ * 对比现行排程，给出总工期、开场截止超期量的变化，以及每条开始时刻被实际推迟的口令。
+ *
+ * 推迟量沿“试算中被拉紧的约束”（trial-tight edge，candidate 恰好等于后继新开始时刻）
+ * 从改动点向下传播；前驱路径按边 ID 稳定选一路：等传播量的多个前驱中始终选 ID 最小的边。
+ */
+export function runWhatIf(project: Project, change: WhatIfChange): WhatIfResult {
+  const current = computeSchedule(project);
+  if (!current.ok) return { ok: false, current, cycle: current.cycle };
+
+  const oldDuration = new Map(project.nodes.map((n) => [n.id, n.duration]));
+  const oldEdgeById = new Map(project.edges.map((e) => [e.id, e]));
+
+  const cloned: Project = {
+    nodes: project.nodes.map((n) =>
+      change.kind === 'node' && n.id === change.id ? { ...n, duration: change.value } : { ...n },
+    ),
+    edges: project.edges.map((e) =>
+      change.kind === 'edge' && e.id === change.id ? { ...e, minDelay: change.value } : { ...e },
+    ),
+    deadline: project.deadline ? { ...project.deadline } : undefined,
+  };
+  const trial = computeSchedule(cloned);
+  if (!trial.ok) return { ok: false, current, trial, cycle: trial.cycle };
+
+  // 推迟量按拓扑序松弛一遍即可完成全部传播（图无环）
+  const topo = topoOrder(cloned);
+  const outgoing = new Map<string, CommandEdge[]>();
+  for (const n of cloned.nodes) outgoing.set(n.id, []);
+  for (const e of cloned.edges) outgoing.get(e.from)!.push(e);
+
+  // arrival[id]：从改动点沿试算紧约束传播到 id 的推迟量（0 = 未被影响）
+  // parent[id]：该推迟量对应的前驱边；等传播量时按边 ID 最小稳定选择
+  const arrival = new Map<string, number>();
+  const parent = new Map<string, CommandEdge>();
+  if (change.kind === 'node') {
+    arrival.set(change.id, Math.max(0, change.value - (oldDuration.get(change.id) ?? change.value)));
+  }
+
+  // 现行排程中某条边给后继留下的余量（无环正向排程下恒 >= 0）
+  const slackOf = (e: CommandEdge): number =>
+    (current.starts[e.to] ?? 0) -
+    ((current.starts[e.from] ?? 0) + (oldDuration.get(e.from) ?? 0) + (oldEdgeById.get(e.id)?.minDelay ?? 0));
+
+  for (const id of topo) {
+    const du = arrival.get(id) ?? 0;
+    for (const e of outgoing.get(id) ?? []) {
+      let cand: number;
+      if (change.kind === 'edge' && e.id === change.id) {
+        // 改动边：增量先被其在现行排程中的余量吸收
+        const delta = change.value - (oldEdgeById.get(e.id)?.minDelay ?? change.value);
+        cand = Math.max(0, delta - Math.max(0, slackOf(e)));
+      } else {
+        // 其他边：上游推迟量先被该边的现有余量吸收
+        if (du <= 0) continue;
+        cand = Math.max(0, du - Math.max(0, slackOf(e)));
+      }
+      if (cand <= 0) continue;
+      // 只沿“试算中被拉紧”的边传播：候选推迟量须恰好等于后继的实际推迟量
+      const actual = Math.max(0, (trial.starts[e.to] ?? 0) - (current.starts[e.to] ?? 0));
+      if (Math.abs(actual - cand) > EPS) continue;
+      const prev = arrival.get(e.to) ?? 0;
+      if (actual > prev + EPS || (Math.abs(actual - prev) < EPS && (!parent.has(e.to) || e.id < parent.get(e.to)!.id))) {
+        arrival.set(e.to, actual);
+        parent.set(e.to, e);
+      }
+    }
+  }
+
+  const delayed: WhatIfDelayed[] = [];
+  for (const n of cloned.nodes) {
+    if (change.kind === 'node' && n.id === change.id) continue; // 改动口令自身开始时刻不推迟
+    const d = (trial.starts[n.id] ?? 0) - (current.starts[n.id] ?? 0);
+    if (d <= EPS) continue;
+    const pathNodeIds: string[] = [n.id];
+    const pathEdgeIds: string[] = [];
+    let curId = n.id;
+    // 沿前驱边回溯到改动点（图无环，必然终止）
+    for (;;) {
+      if (change.kind === 'node' && curId === change.id) break;
+      const pe = parent.get(curId);
+      if (!pe) break;
+      pathEdgeIds.push(pe.id);
+      pathNodeIds.push(pe.from);
+      curId = pe.from;
+      if (change.kind === 'edge' && pe.id === change.id) break;
+    }
+    delayed.push({ nodeId: n.id, delay: d, pathNodeIds, pathEdgeIds });
+  }
+  // 推迟多者在前；同量按节点 id 稳定排序
+  delayed.sort((a, b) =>
+    b.delay - a.delay !== 0 ? b.delay - a.delay : a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0,
+  );
+
+  return { ok: true, current, trial, delayed };
+}
+
+/** Kahn 拓扑排序（仅在无环图上调用）；出队顺序按 id 排序以保持稳定。 */
+function topoOrder(project: Project): string[] {
+  const indegree = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  for (const n of project.nodes) {
+    indegree.set(n.id, 0);
+    outgoing.set(n.id, []);
+  }
+  for (const e of project.edges) {
+    if (!indegree.has(e.from) || !indegree.has(e.to)) continue;
+    indegree.set(e.to, (indegree.get(e.to) ?? 0) + 1);
+    outgoing.get(e.from)!.push(e.to);
+  }
+  const ready = [...indegree].filter(([, d]) => d === 0).map(([id]) => id).sort();
+  const order: string[] = [];
+  while (ready.length > 0) {
+    const id = ready.shift()!;
+    order.push(id);
+    for (const to of outgoing.get(id) ?? []) {
+      const d = (indegree.get(to) ?? 0) - 1;
+      indegree.set(to, d);
+      if (d === 0) {
+        ready.push(to);
+        ready.sort();
+      }
+    }
+  }
+  return order;
 }

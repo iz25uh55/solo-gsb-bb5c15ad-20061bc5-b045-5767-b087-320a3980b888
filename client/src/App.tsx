@@ -233,6 +233,7 @@ export default function App() {
           project={project}
           schedule={effectiveSchedule}
           selection={selection}
+          cycle={cycle}
           onUpdateNode={updateNode}
           onUpdateEdge={updateEdge}
           onDeleteNode={deleteNode}
